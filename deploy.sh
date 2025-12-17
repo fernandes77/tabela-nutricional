@@ -28,6 +28,7 @@ fi
 
 echo "Building Go backend..."
 cd "$ROOT"
+export GOPATH=/tmp/go
 export GOCACHE=/tmp/go-build-cache
 export GOMODCACHE=/tmp/go-mod-cache
 export GOTOOLCHAIN=auto
