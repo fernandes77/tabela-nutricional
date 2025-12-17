@@ -8,6 +8,11 @@ interface Props {
 
 const { food } = Astro.props;
 
+// Get initial multiplier from first outrasMedidas, default to 1
+const initialMultiplier = food.outrasMedidas && food.outrasMedidas.length > 0 
+  ? parseFloat(food.outrasMedidas[0].value) 
+  : 1;
+
 const categories = [
   { key: 'principal', label: 'Informação Nutricional' },
   { key: 'fibras', label: 'Composição' },
@@ -30,8 +35,8 @@ function getNutrientsForCategory(category: string): NutrientInfo[] {
   <div class="serving-selector">
     <label for="serving-select">Porção:</label>
     <select id="serving-select">
-      {food.outrasMedidas && food.outrasMedidas.map((measure) => (
-        <option value={measure.value}>{measure.label}</option>
+      {food.outrasMedidas && food.outrasMedidas.map((measure, index) => (
+        <option value={measure.value} selected={index === 0}>{measure.label}</option>
       ))}
       <option value="gramas">Gramas (personalizado)</option>
     </select>
@@ -112,6 +117,13 @@ function getNutrientsForCategory(category: string): NutrientInfo[] {
     const table = document.getElementById('nutritional-table');
     
     if (!select || !table || !gramsInputContainer || !gramsInput) return;
+
+    // Initialize with first outrasMedidas multiplier
+    const firstOptionValue = select.options[0]?.value;
+    if (firstOptionValue && firstOptionValue !== 'gramas') {
+      const initialMultiplier = parseFloat(firstOptionValue);
+      updateTableValues(initialMultiplier);
+    }
 
     function handleServingChange() {
       const selectedValue = select.value;
