@@ -8,11 +8,6 @@ interface Props {
 
 const { food } = Astro.props;
 
-// Get initial multiplier from first outrasMedidas, default to 1
-const initialMultiplier = food.outrasMedidas && food.outrasMedidas.length > 0 
-  ? parseFloat(food.outrasMedidas[0].value) 
-  : 1;
-
 const categories = [
   { key: 'principal', label: 'Informação Nutricional' },
   { key: 'fibras', label: 'Composição' },
