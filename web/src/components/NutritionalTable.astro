@@ -1,0 +1,335 @@
+---
+import type { Food, NutrientInfo } from '../types/food';
+import { nutrientsList, formatNutrientValue } from '../types/food';
+
+interface Props {
+  food: Food;
+}
+
+const { food } = Astro.props;
+
+const categories = [
+  { key: 'principal', label: 'Informação Nutricional' },
+  { key: 'fibras', label: 'Composição' },
+  { key: 'lipidios', label: 'Gorduras' },
+  { key: 'minerais', label: 'Minerais' },
+  { key: 'vitaminas', label: 'Vitaminas' },
+  { key: 'outros', label: 'Outros' },
+];
+
+function getNutrientsForCategory(category: string): NutrientInfo[] {
+  return nutrientsList.filter(n => {
+    if (n.category !== category) return false;
+    const value = food[n.key as keyof Food];
+    return value !== null && value !== undefined;
+  });
+}
+---
+
+<div class="nutritional-table" id="nutritional-table">
+  <div class="serving-selector">
+    <label for="serving-select">Porção:</label>
+    <select id="serving-select">
+      <option value="1" selected>100g (padrão)</option>
+      {food.outrasMedidas && food.outrasMedidas.map((measure) => (
+        <option value={measure.value}>{measure.label}</option>
+      ))}
+      <option value="gramas">Gramas (personalizado)</option>
+    </select>
+    <div class="grams-input-container" id="grams-input-container" style="display: none;">
+      <label for="grams-input">Quantidade (g):</label>
+      <input 
+        type="number" 
+        id="grams-input" 
+        min="0" 
+        step="0.1" 
+        value="100"
+        placeholder="100"
+      />
+    </div>
+  </div>
+
+  <div class="categories">
+    {categories.map(({ key, label }) => {
+      const nutrients = getNutrientsForCategory(key);
+      if (nutrients.length === 0) return null;
+      
+      return (
+        <div class="category">
+          <h3 class="category-title">
+            {label}
+          </h3>
+          <div class="nutrients-grid">
+            {nutrients.map((nutrient, index) => {
+              const value = food[nutrient.key as keyof Food] as number | null;
+              return (
+                <div 
+                  class={`nutrient-row ${key === 'principal' && index < 5 ? 'highlight-row' : ''}`}
+                  style={`animation-delay: ${index * 0.03}s`}
+                  data-key={nutrient.key}
+                  data-base-value={value ?? ''}
+                >
+                  <span class="nutrient-name">{nutrient.label}</span>
+                  <span class="nutrient-value">
+                    <span class="value-number">{formatNutrientValue(value)}</span>
+                    <span class="value-unit">{nutrient.unit}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+</div>
+
+<script>
+  import { formatNutrientValue } from '../types/food';
+
+  function updateTableValues(multiplier: number) {
+    const table = document.getElementById('nutritional-table');
+    if (!table) return;
+    
+    const rows = table.querySelectorAll('.nutrient-row');
+    
+    rows.forEach(row => {
+      const baseValue = row.getAttribute('data-base-value');
+      const valueSpan = row.querySelector('.value-number');
+      
+      if (valueSpan && baseValue !== '') {
+        const numValue = parseFloat(baseValue ?? '0');
+        valueSpan.textContent = formatNutrientValue(numValue, multiplier);
+      }
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const select = document.getElementById('serving-select') as HTMLSelectElement;
+    const gramsInputContainer = document.getElementById('grams-input-container') as HTMLDivElement;
+    const gramsInput = document.getElementById('grams-input') as HTMLInputElement;
+    const table = document.getElementById('nutritional-table');
+    
+    if (!select || !table || !gramsInputContainer || !gramsInput) return;
+
+    function handleServingChange() {
+      const selectedValue = select.value;
+      
+      if (selectedValue === 'gramas') {
+        // Show grams input
+        gramsInputContainer.style.display = 'flex';
+        const gramsValue = parseFloat(gramsInput.value) || 100;
+        const multiplier = gramsValue / 100;
+        updateTableValues(multiplier);
+      } else {
+        // Hide grams input and use select value
+        gramsInputContainer.style.display = 'none';
+        const multiplier = parseFloat(selectedValue);
+        updateTableValues(multiplier);
+      }
+    }
+
+    function handleGramsInput() {
+      if (select.value === 'gramas') {
+        const gramsValue = parseFloat(gramsInput.value) || 0;
+        const multiplier = gramsValue / 100;
+        updateTableValues(multiplier);
+      }
+    }
+
+    select.addEventListener('change', handleServingChange);
+    gramsInput.addEventListener('input', handleGramsInput);
+    gramsInput.addEventListener('change', handleGramsInput);
+  });
+</script>
+
+<style>
+  .nutritional-table {
+    width: 100%;
+  }
+
+  .serving-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    margin-bottom: 16px;
+  }
+
+  .serving-selector > label {
+    font-weight: 500;
+    font-size: 0.875rem;
+    color: var(--color-text);
+  }
+
+  .serving-selector select {
+    flex: 1;
+    padding: 6px 10px;
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-dark);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+  }
+
+  .serving-selector select:hover {
+    border-color: var(--color-accent);
+  }
+
+  .serving-selector select:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+
+  .grams-input-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .grams-input-container label {
+    font-weight: 500;
+    font-size: 0.875rem;
+    color: var(--color-text);
+    white-space: nowrap;
+  }
+
+  .grams-input-container input {
+    flex: 1;
+    padding: 6px 10px;
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-dark);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: 0.875rem;
+    transition: border-color 0.15s ease;
+  }
+
+  .grams-input-container input:hover {
+    border-color: var(--color-accent);
+  }
+
+  .grams-input-container input:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+
+  .categories {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .category {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  .category-title {
+    padding: 10px 16px;
+    background: var(--color-primary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: white;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .nutrients-grid {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .nutrient-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--color-border);
+    transition: background-color 0.1s ease;
+  }
+
+  .nutrient-row:last-child {
+    border-bottom: none;
+  }
+
+  .nutrient-row:hover {
+    background: var(--color-bg-hover);
+  }
+
+  .nutrient-row.highlight-row {
+    background: rgba(37, 99, 235, 0.04);
+    font-weight: 500;
+  }
+
+  .nutrient-row.highlight-row:hover {
+    background: rgba(37, 99, 235, 0.08);
+  }
+
+  .nutrient-name {
+    font-size: 0.875rem;
+    color: var(--color-text);
+  }
+
+  .highlight-row .nutrient-name {
+    font-weight: 600;
+  }
+
+  .nutrient-value {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-family: var(--font-heading);
+  }
+
+  .value-number {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .highlight-row .value-number {
+    color: var(--color-accent);
+    font-size: 1rem;
+  }
+
+  .value-unit {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    font-weight: 400;
+  }
+
+  @media (max-width: 640px) {
+    .serving-selector {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .grams-input-container {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .nutrient-row {
+      padding: 8px 12px;
+    }
+
+    .category-title {
+      padding: 8px 12px;
+    }
+  }
+</style>
+

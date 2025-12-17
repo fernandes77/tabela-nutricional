@@ -1,0 +1,344 @@
+---
+import Layout from '../layouts/Layout.astro';
+import SearchBar from '../components/SearchBar.astro';
+import FoodList from '../components/FoodList.astro';
+import { fetchFoods } from '../lib/api';
+
+// Fetch all foods at build time
+const allFoods = await fetchFoods('both');
+---
+
+<Layout title="Tabela Nutricional - Pesquisa de Alimentos">
+  <main class="main">
+    <header class="header">
+      <h1 class="title">Tabela Nutricional</h1>
+      <p class="subtitle">Pesquise informações nutricionais de alimentos brasileiros</p>
+    </header>
+
+    <section class="search-section">
+      <SearchBar />
+      <FoodList />
+    </section>
+
+    <footer class="footer">
+      <p>Dados das tabelas <a href="https://cfn.org.br/wp-content/uploads/2017/03/taco_4_edicao_ampliada_e_revisada.pdf" target="_blank" rel="noopener">TACO</a> e <a href="https://www.tbca.net.br/" target="_blank" rel="noopener">TBCA</a></p>
+    </footer>
+  </main>
+
+  <script define:vars={{ allFoods }}>
+    window.__FOODS_DATA__ = allFoods;
+  </script>
+
+  <script>
+    interface Food {
+      codigo: string;
+      nome: string;
+      slug: string;
+      grupo: string;
+      source: 'taco' | 'tbca';
+    }
+
+    const foods: Food[] = (window as any).__FOODS_DATA__ || [];
+    
+    const searchInput = document.getElementById('search-input') as HTMLInputElement;
+    const clearBtn = document.getElementById('clear-search') as HTMLButtonElement;
+    const includeTbcaCheckbox = document.getElementById('include-tbca') as HTMLInputElement;
+    const resultsContainer = document.getElementById('results-container') as HTMLUListElement;
+    const resultsInfo = document.getElementById('results-info') as HTMLDivElement;
+    const emptyState = document.getElementById('empty-state') as HTMLDivElement;
+    const noResults = document.getElementById('no-results') as HTMLDivElement;
+
+    function normalizeString(str: string): string {
+      return str
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    }
+
+    function tokenizeQuery(query: string): string[] {
+      return query
+        .trim()
+        .split(/\s+/)
+        .filter(word => word.length > 0)
+        .map(word => normalizeString(word));
+    }
+
+    function highlightMatch(text: string, query: string): string {
+      if (!query) return text;
+      
+      const queryWords = tokenizeQuery(query);
+      const normalizedText = normalizeString(text);
+      
+      // Build a character mapping: normalized index -> original index
+      const charMap: number[] = [];
+      for (let i = 0; i < text.length; i++) {
+        const normalized = normalizeString(text[i]);
+        for (let j = 0; j < normalized.length; j++) {
+          charMap.push(i);
+        }
+      }
+      
+      // Find all matches
+      const ranges: Array<{ start: number; end: number }> = [];
+      
+      for (const word of queryWords) {
+        let searchIndex = 0;
+        while (true) {
+          const wordIndex = normalizedText.indexOf(word, searchIndex);
+          if (wordIndex === -1) break;
+          
+          const start = charMap[wordIndex] ?? wordIndex;
+          const endIndex = Math.min(wordIndex + word.length - 1, charMap.length - 1);
+          const end = (charMap[endIndex] ?? endIndex) + 1;
+          
+          ranges.push({ start, end });
+          searchIndex = wordIndex + word.length;
+        }
+      }
+      
+      // Merge overlapping ranges
+      ranges.sort((a, b) => a.start - b.start);
+      const merged: Array<{ start: number; end: number }> = [];
+      for (const range of ranges) {
+        if (merged.length === 0 || merged[merged.length - 1].end < range.start) {
+          merged.push({ ...range });
+        } else {
+          merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, range.end);
+        }
+      }
+      
+      // Apply highlights (reverse order to preserve indices)
+      let result = text;
+      for (let i = merged.length - 1; i >= 0; i--) {
+        const range = merged[i];
+        const before = result.slice(0, range.start);
+        const match = result.slice(range.start, range.end);
+        const after = result.slice(range.end);
+        result = `${before}<span class="highlight">${match}</span>${after}`;
+      }
+      
+      return result;
+    }
+
+    function calculateRelevance(food: Food, queryWords: string[]): number {
+      const normalizedName = normalizeString(food.nome);
+      const normalizedGrupo = normalizeString(food.grupo || '');
+      
+      let score = 0;
+      let allWordsMatch = true;
+      
+      for (const word of queryWords) {
+        const nameIndex = normalizedName.indexOf(word);
+        const grupoIndex = normalizedGrupo.indexOf(word);
+        
+        if (nameIndex === -1 && grupoIndex === -1) {
+          allWordsMatch = false;
+          continue;
+        }
+        
+        // Exact match at start of name gets highest score
+        if (nameIndex === 0) {
+          score += 100;
+        }
+        // Word boundary match gets high score
+        else if (nameIndex > 0 && /[\s\-]/.test(normalizedName[nameIndex - 1])) {
+          score += 50;
+        }
+        // Any match in name
+        else if (nameIndex !== -1) {
+          score += 25;
+        }
+        
+        // Match in grupo adds bonus
+        if (grupoIndex !== -1) {
+          score += 10;
+        }
+      }
+      
+      // If not all words match, return 0
+      if (!allWordsMatch) {
+        return 0;
+      }
+      
+      return score;
+    }
+
+    function searchFoods(query: string, includeTbca: boolean): Food[] {
+      if (!query.trim()) {
+        return [];
+      }
+      
+      const queryWords = tokenizeQuery(query);
+      if (queryWords.length === 0) {
+        return [];
+      }
+      
+      const results = foods
+        .filter(food => {
+          if (!includeTbca && food.source === 'tbca') return false;
+          
+          const normalizedName = normalizeString(food.nome);
+          const normalizedGrupo = normalizeString(food.grupo || '');
+          
+          // Check if all query words appear in either name or grupo
+          return queryWords.every(word => 
+            normalizedName.includes(word) || normalizedGrupo.includes(word)
+          );
+        })
+        .map(food => ({
+          food,
+          relevance: calculateRelevance(food, queryWords)
+        }))
+        .filter(item => item.relevance > 0) // Only include items where all words matched
+        .sort((a, b) => b.relevance - a.relevance) // Sort by relevance
+        .map(item => item.food)
+        .slice(0, 100); // Increased limit for better results
+      
+      return results;
+    }
+
+    function renderResults(results: Food[], query: string) {
+      if (!query) {
+        resultsContainer.innerHTML = '';
+        resultsInfo.textContent = '';
+        emptyState.style.display = 'flex';
+        noResults.style.display = 'none';
+        return;
+      }
+
+      emptyState.style.display = 'none';
+
+      if (results.length === 0) {
+        resultsContainer.innerHTML = '';
+        resultsInfo.textContent = '';
+        noResults.style.display = 'flex';
+        return;
+      }
+
+      noResults.style.display = 'none';
+      resultsInfo.textContent = `${results.length}${results.length === 50 ? '+' : ''} resultado${results.length !== 1 ? 's' : ''}`;
+
+      resultsContainer.innerHTML = results.map((food, index) => `
+        <li class="food-item" style="animation-delay: ${index * 0.02}s">
+          <a href="/alimento/${food.slug}">
+            <div class="food-info">
+              <div class="food-name">${highlightMatch(food.nome, query)}</div>
+              <div class="food-meta">
+                <span class="food-group">${food.grupo || 'Sem grupo'}</span>
+                <span class="food-source ${food.source}">${food.source.toUpperCase()}</span>
+              </div>
+            </div>
+            <div class="food-arrow">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 18l6-6-6-6"></path>
+              </svg>
+            </div>
+          </a>
+        </li>
+      `).join('');
+    }
+
+    function handleSearch() {
+      const query = searchInput.value.trim();
+      const includeTbca = includeTbcaCheckbox.checked;
+      
+      clearBtn.classList.toggle('visible', query.length > 0);
+      
+      const results = searchFoods(query, includeTbca);
+      renderResults(results, query);
+    }
+
+    // Event listeners
+    searchInput.addEventListener('input', handleSearch);
+    includeTbcaCheckbox.addEventListener('change', handleSearch);
+    
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      handleSearch();
+      searchInput.focus();
+    });
+
+    // Handle keyboard navigation
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        searchInput.value = '';
+        handleSearch();
+      }
+    });
+
+    // Initial render
+    handleSearch();
+  </script>
+</Layout>
+
+<style>
+  .main {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 0 24px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .header {
+    padding-top: 48px;
+    margin-bottom: 32px;
+  }
+
+  .title {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+  }
+
+  .subtitle {
+    font-size: 0.9375rem;
+    color: var(--color-text-muted);
+    max-width: 600px;
+  }
+
+  .search-section {
+    flex: 1;
+  }
+
+  .footer {
+    text-align: left;
+    padding: 32px 0 24px;
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+    border-top: 1px solid var(--color-border);
+    margin-top: 48px;
+  }
+
+  .footer a {
+    color: var(--color-accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .footer a:hover {
+    color: var(--color-accent-hover);
+  }
+
+  @media (max-width: 640px) {
+    .main {
+      padding: 0 16px;
+    }
+
+    .header {
+      padding-top: 32px;
+      margin-bottom: 24px;
+    }
+
+    .title {
+      font-size: 1.75rem;
+    }
+
+    .subtitle {
+      font-size: 0.875rem;
+    }
+  }
+</style>
