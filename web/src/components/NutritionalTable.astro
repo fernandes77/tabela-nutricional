@@ -209,7 +209,7 @@ function getNutrientsForCategory(category: string): NutrientInfo[] {
     border: 1px solid var(--color-border-dark);
     border-radius: var(--radius-sm);
     color: var(--color-text);
-    font-size: 0.875rem;
+    font-size: 1rem; /* 16px prevents iOS zoom on focus */
     transition: border-color 0.15s ease;
   }
 
