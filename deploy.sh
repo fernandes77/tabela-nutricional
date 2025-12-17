@@ -30,7 +30,7 @@ echo "Building Go backend..."
 cd "$ROOT"
 export GOCACHE=/tmp/go-build-cache
 export GOMODCACHE=/tmp/go-mod-cache
-export GOTOOLCHAIN=local
+export GOTOOLCHAIN=auto
 CGO_ENABLED=0 go build -o "$ROOT/tabela-nutricional" .
 chmod +x "$ROOT/tabela-nutricional"
 
