@@ -30,7 +30,6 @@ function getNutrientsForCategory(category: string): NutrientInfo[] {
   <div class="serving-selector">
     <label for="serving-select">Porção:</label>
     <select id="serving-select">
-      <option value="1" selected>100g (padrão)</option>
       {food.outrasMedidas && food.outrasMedidas.map((measure) => (
         <option value={measure.value}>{measure.label}</option>
       ))}
